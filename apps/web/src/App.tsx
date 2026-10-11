@@ -1,57 +1,42 @@
 import { useMemo, useState } from "react";
-import { defaultParams, getPattern, measureNail, type Design, type NailOutline } from "@naily/core";
+import { measureNail, PRESETS, SCAN_STEPS, type Design, type FingerId, type NailOutline, type ScanStep as Step } from "@naily/core";
 import { detectLang, dictionaries, I18nContext, type Lang } from "./i18n.ts";
-import { collectOutlines, loadProfile, saveProfile, type Photo, type PhotoNail } from "./state.ts";
-import { CaptureStep } from "./components/CaptureStep.tsx";
-import { PhotoMarker } from "./components/PhotoMarker.tsx";
-import { ReviewStep } from "./components/ReviewStep.tsx";
+import { collectNails, loadProfile, saveProfile, type ScanResponse, type StepResults } from "./state.ts";
+import { ScanStep } from "./components/ScanStep.tsx";
+import { SizesStep } from "./components/SizesStep.tsx";
 import { DesignStep } from "./components/DesignStep.tsx";
 import { OrderStep } from "./components/OrderStep.tsx";
 
-type Step = "intro" | "capture" | "mark" | "review" | "design" | "order" | "done";
-const STEPS: Step[] = ["capture", "mark", "review", "design", "order"];
+type Screen = { name: "welcome" } | { name: "scan"; index: number } | { name: "sizes" } | { name: "design" } | { name: "order" } | { name: "done" };
 
-const initialDesign = (): Design => ({ main: { patternId: "french", params: defaultParams(getPattern("french")!) } });
+const stepFor = (finger: FingerId): Step =>
+  `${finger[0] === "L" ? "left" : "right"}-${finger.endsWith("1") ? "thumb" : "hand"}` as Step;
 
 export function App() {
   const [lang, setLang] = useState<Lang>(detectLang);
   const t = dictionaries[lang];
-  const [step, setStep] = useState<Step>("intro");
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [activePhoto, setActivePhoto] = useState(0);
-  const [savedNails, setSavedNails] = useState<NailOutline[] | null>(loadProfile);
-  /** Set when the customer reuses a saved profile instead of scanning. */
+  const [screen, setScreen] = useState<Screen>({ name: "welcome" });
+  const [results, setResults] = useState<StepResults>({});
+  const [savedNails] = useState<NailOutline[] | null>(loadProfile);
+  /** Set when the customer reuses saved sizes instead of taking photos. */
   const [profileNails, setProfileNails] = useState<NailOutline[] | null>(null);
-  const [design, setDesign] = useState<Design>(initialDesign);
+  const [design, setDesign] = useState<Design>(PRESETS[0]!.design);
   const [orderId, setOrderId] = useState<string | null>(null);
 
-  const outlines = useMemo(() => profileNails ?? collectOutlines(photos).complete, [photos, profileNails]);
-  const measured = useMemo(() => outlines.map(measureNail), [outlines]);
-  const placed = useMemo(() => new Set(photos.flatMap((p) => p.nails.map((n) => n.finger))), [photos]);
+  const collected = useMemo(() => collectNails(results), [results]);
+  const nails = profileNails ?? collected.nails;
+  const missing = profileNails ? [] : collected.missing;
+  const measured = useMemo(() => nails.map(measureNail), [nails]);
 
-  const updatePhoto = (photo: Photo) => setPhotos((ps) => ps.map((p) => (p.id === photo.id ? photo : p)));
-
-  // A finger lives on exactly one photo: placing it here removes it from the others.
-  const placeNail = (photoId: string, nail: PhotoNail) =>
-    setPhotos((ps) =>
-      ps.map((p) => {
-        const others = p.nails.filter((n) => n.finger !== nail.finger);
-        return { ...p, nails: p.id === photoId ? [...others, nail] : others };
-      }),
-    );
+  const setResult = (step: Step, r: ScanResponse | undefined) => setResults((prev) => ({ ...prev, [step]: r }));
 
   function restart() {
-    photos.forEach((p) => URL.revokeObjectURL(p.url));
-    setPhotos([]);
+    setResults({});
     setProfileNails(null);
-    setDesign(initialDesign());
+    setDesign(PRESETS[0]!.design);
     setOrderId(null);
-    setSavedNails(loadProfile());
-    setStep("intro");
+    setScreen({ name: "welcome" });
   }
-
-  const stepIndex = STEPS.indexOf(step);
-  const photo = photos[Math.min(activePhoto, photos.length - 1)];
 
   return (
     <I18nContext.Provider value={{ t, lang }}>
@@ -59,123 +44,100 @@ export function App() {
         <button className="brand" onClick={restart}>
           Naily <span>甲印</span>
         </button>
-        <button className="link" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
-          {lang === "zh" ? "EN" : "中文"}
+        <button className="lang" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
+          {lang === "zh" ? "English" : "中文"}
         </button>
       </header>
 
-      {stepIndex >= 0 && (
-        <ol className="stepper">
-          {t.steps.map((label, i) => (
-            <li key={label} className={i === stepIndex ? "current" : i < stepIndex ? "done" : ""}>
-              {label}
-            </li>
-          ))}
-        </ol>
-      )}
-
       <main>
-        {step === "intro" && (
-          <section className="card intro">
+        {screen.name === "welcome" && (
+          <section className="card welcome">
             <h1>{t.tagline}</h1>
-            <ol>
-              <li>{t.intro1}</li>
-              <li>{t.intro2}</li>
-              <li>{t.intro3}</li>
-            </ol>
-            <p className="muted small">{t.privacy}</p>
-            <div className="row">
-              <button className="primary" onClick={() => setStep("capture")}>
-                {t.start}
+            <p className="big-text">{t.welcomeText}</p>
+            <h2>{t.need}</h2>
+            <ul className="needs">
+              <li>📱 {t.needPhone}</li>
+              <li>💳 {t.needCard}</li>
+              <li>💡 {t.needLight}</li>
+            </ul>
+            <button className="primary huge" onClick={() => setScreen({ name: "scan", index: 0 })}>
+              {t.start}
+            </button>
+            {savedNails && (
+              <button
+                className="plain"
+                onClick={() => {
+                  setProfileNails(savedNails);
+                  setScreen({ name: "sizes" });
+                }}
+              >
+                {t.useSaved}
               </button>
-              {savedNails && (
-                <button
-                  onClick={() => {
-                    setProfileNails(savedNails);
-                    setStep("review");
-                  }}
-                >
-                  {t.useSaved}
-                </button>
-              )}
-            </div>
-          </section>
-        )}
-
-        {step === "capture" && (
-          <CaptureStep
-            photos={photos}
-            onAdd={(p) => setPhotos((ps) => [...ps, p])}
-            onRemove={(id) =>
-              setPhotos((ps) => {
-                const gone = ps.find((p) => p.id === id);
-                if (gone) URL.revokeObjectURL(gone.url);
-                return ps.filter((p) => p.id !== id);
-              })
-            }
-            onNext={() => {
-              setActivePhoto(0);
-              setStep("mark");
-            }}
-          />
-        )}
-
-        {step === "mark" && photo && (
-          <section className="card">
-            {photos.length > 1 && (
-              <div className="tabs">
-                {photos.map((p, i) => (
-                  <button key={p.id} className={p.id === photo.id ? "active" : ""} onClick={() => setActivePhoto(i)}>
-                    {t.photo} {i + 1}
-                  </button>
-                ))}
-              </div>
             )}
-            <PhotoMarker key={photo.id} photo={photo} placed={placed} onChange={updatePhoto} onPlaceNail={placeNail} />
-            <div className="actions">
-              <button onClick={() => setStep("capture")}>{t.back}</button>
-              <button className="primary" disabled={placed.size === 0} onClick={() => setStep("review")}>
-                {t.next}
-              </button>
-            </div>
+            <p className="muted">🔒 {t.privacy}</p>
           </section>
         )}
 
-        {step === "review" && (
-          <ReviewStep
-            nails={outlines}
+        {screen.name === "scan" && (
+          <ScanStep
+            key={SCAN_STEPS[screen.index]}
+            step={SCAN_STEPS[screen.index]!}
+            index={screen.index}
+            total={SCAN_STEPS.length}
+            result={results[SCAN_STEPS[screen.index]!]}
+            onResult={(r) => setResult(SCAN_STEPS[screen.index]!, r)}
+            onNext={() =>
+              setScreen(screen.index + 1 < SCAN_STEPS.length ? { name: "scan", index: screen.index + 1 } : { name: "sizes" })
+            }
+            onBack={() => setScreen(screen.index === 0 ? { name: "welcome" } : { name: "scan", index: screen.index - 1 })}
+          />
+        )}
+
+        {screen.name === "sizes" && (
+          <SizesStep
+            nails={nails}
+            missing={missing}
+            onRescan={(finger) => setScreen({ name: "scan", index: SCAN_STEPS.indexOf(stepFor(finger)) })}
+            onNext={() => setScreen({ name: "design" })}
             onBack={() => {
-              setProfileNails(null);
-              setStep(profileNails ? "intro" : "mark");
+              if (profileNails) {
+                setProfileNails(null);
+                setScreen({ name: "welcome" });
+              } else setScreen({ name: "scan", index: SCAN_STEPS.length - 1 });
             }}
-            onNext={() => setStep("design")}
           />
         )}
 
-        {step === "design" && (
-          <DesignStep nails={measured} design={design} onChange={setDesign} onBack={() => setStep("review")} onNext={() => setStep("order")} />
-        )}
-
-        {step === "order" && (
-          <OrderStep
-            nails={outlines}
+        {screen.name === "design" && (
+          <DesignStep
+            nails={measured}
             design={design}
-            onBack={() => setStep("design")}
+            onChange={setDesign}
+            onBack={() => setScreen({ name: "sizes" })}
+            onNext={() => setScreen({ name: "order" })}
+          />
+        )}
+
+        {screen.name === "order" && (
+          <OrderStep
+            nails={nails}
+            design={design}
+            onBack={() => setScreen({ name: "design" })}
             onPlaced={(id) => {
-              saveProfile(outlines);
+              saveProfile(nails);
               setOrderId(id);
-              setStep("done");
+              setScreen({ name: "done" });
             }}
           />
         )}
 
-        {step === "done" && (
+        {screen.name === "done" && (
           <section className="card done">
-            <h1>{t.thanks}</h1>
-            <p>{t.orderNo}</p>
+            <h1>✓ {t.thanks}</h1>
+            <p className="big-text">{t.orderNo}</p>
             <p className="order-id">{orderId}</p>
-            <p className="muted">{t.doneNote}</p>
-            <button className="primary" onClick={restart}>
+            <p className="big-text muted">{t.doneNote}</p>
+            <button className="primary huge" onClick={restart}>
               {t.newOrder}
             </button>
           </section>

@@ -12,6 +12,7 @@ const app = createApp({
   store: new OrderStore(dbPath),
   adminToken: process.env.ADMIN_TOKEN || undefined,
   staticDir: path.resolve(here, "../../web/dist"),
+  visionUrl: process.env.VISION_URL ?? "http://127.0.0.1:8790",
 });
 
 const port = Number(process.env.PORT ?? 8787);

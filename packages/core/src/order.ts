@@ -1,5 +1,13 @@
 import type { Point } from "./geometry.ts";
-import { isFingerId, measureNail, OUTLINE_POINTS, type NailMeasurement, type NailOutline } from "./nail.ts";
+import {
+  isFingerId,
+  isValidOutlineLength,
+  MAX_OUTLINE_POINTS,
+  measureNail,
+  MIN_OUTLINE_POINTS,
+  type NailMeasurement,
+  type NailOutline,
+} from "./nail.ts";
 import { validatePatternParams } from "./patterns.ts";
 import type { Design } from "./design.ts";
 
@@ -92,8 +100,8 @@ export function validateOrder(input: unknown): string[] {
       }
       if (seen.has(n.finger)) errors.push(`Duplicate finger ${n.finger}`);
       seen.add(n.finger);
-      if (!Array.isArray(n.points) || n.points.length !== OUTLINE_POINTS || !n.points.every(isPoint)) {
-        errors.push(`${n.finger}: outline needs ${OUTLINE_POINTS} points`);
+      if (!Array.isArray(n.points) || !isValidOutlineLength(n.points.length) || !n.points.every(isPoint)) {
+        errors.push(`${n.finger}: outline needs ${MIN_OUTLINE_POINTS}–${MAX_OUTLINE_POINTS} points`);
         continue;
       }
       try {

@@ -1,0 +1,20 @@
+# One command to run everything: docker compose up --build
+services:
+  vision:
+    build: ./apps/vision
+    restart: unless-stopped
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      VISION_URL: http://vision:8790
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      NAILY_DB: /data/naily.sqlite
+    volumes:
+      - naily-data:/data
+    depends_on:
+      - vision
+volumes:
+  naily-data:

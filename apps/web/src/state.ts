@@ -1,47 +1,77 @@
-import {
-  calibrateFromCard,
-  completeHandSet,
-  pixelsToMm,
-  type Calibration,
-  type FingerId,
-  type NailOutline,
-  type Point,
-} from "@naily/core";
+import { completeHandSet, FINGERS, type FingerId, type NailOutline, type ScanProblem, type ScanStep } from "@naily/core";
 
-export interface PhotoNail {
-  finger: FingerId;
-  /** Control points in image pixels. */
-  points: Point[];
+export interface ScannedNail extends NailOutline {
+  confidence: number;
+  widthMm: number;
+  lengthMm: number;
+  shape: string;
 }
 
-export interface Photo {
-  id: string;
-  url: string;
-  width: number;
-  height: number;
-  /** Card corners in image pixels, once the customer has placed them. */
-  card: Point[] | null;
-  nails: PhotoNail[];
+/** What /api/scan answers. Pixel data in `preview` is only for drawing the outlines on the photo. */
+export interface ScanResponse {
+  ok: boolean;
+  problem?: ScanProblem;
+  nails?: ScannedNail[];
+  sideThumb?: ScannedNail | null;
+  missing?: FingerId[];
+  preview?: {
+    width?: number;
+    height?: number;
+    card: [number, number][] | null;
+    nails: { finger: string; points: [number, number][] }[];
+  };
 }
 
-export function calibrationFor(photo: Photo): Calibration | null {
-  if (!photo.card) return null;
+export type StepResults = Partial<Record<ScanStep, ScanResponse>>;
+
+/** Phones can produce huge photos; above this we shrink before uploading (losing EXIF is fine). */
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+
+async function shrink(file: File, maxSide = 3000): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const s = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * s);
+  canvas.height = Math.round(bitmap.height * s);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode"))), "image/jpeg", 0.92),
+  );
+}
+
+export async function scanPhoto(file: File, step: ScanStep): Promise<ScanResponse> {
+  // Send the original when possible: its EXIF tells us the lens, which sharpens the measurement.
+  const body = file.size > MAX_UPLOAD_BYTES ? await shrink(file) : file;
   try {
-    return calibrateFromCard(photo.card);
+    const res = await fetch(`/api/scan?step=${step}`, {
+      method: "POST",
+      headers: { "content-type": body.type || "image/jpeg" },
+      body,
+    });
+    const data = (await res.json()) as ScanResponse;
+    return data.ok || data.problem ? data : { ok: false, problem: "service-unavailable" };
   } catch {
-    return null;
+    return { ok: false, problem: "service-unavailable" };
   }
 }
 
-/** All scanned nails converted to millimetres, plus mirrored stand-ins for unscanned fingers. */
-export function collectOutlines(photos: Photo[]): { scanned: NailOutline[]; complete: NailOutline[] } {
-  const scanned: NailOutline[] = [];
-  for (const photo of photos) {
-    const cal = calibrationFor(photo);
-    if (!cal) continue;
-    for (const n of photo.nails) scanned.push({ finger: n.finger, points: pixelsToMm(cal, n.points) });
+/**
+ * Combines the four photos into 10 nails. A thumb seen side-on on the flat-hand photo is used
+ * only when its own thumb photo was skipped; anything still missing is mirrored from the other hand.
+ */
+export function collectNails(results: StepResults): { nails: NailOutline[]; missing: FingerId[] } {
+  const byFinger = new Map<FingerId, NailOutline>();
+  for (const step of ["left-hand", "right-hand", "left-thumb", "right-thumb"] as ScanStep[]) {
+    for (const n of results[step]?.nails ?? []) byFinger.set(n.finger, { finger: n.finger, points: n.points });
   }
-  return { scanned, complete: completeHandSet(scanned) };
+  for (const step of ["left-hand", "right-hand"] as ScanStep[]) {
+    const side = results[step]?.sideThumb;
+    if (side && !byFinger.has(side.finger)) byFinger.set(side.finger, { finger: side.finger, points: side.points });
+  }
+  const nails = completeHandSet([...byFinger.values()]);
+  const have = new Set(nails.map((n) => n.finger));
+  return { nails, missing: FINGERS.filter((f) => !have.has(f)) };
 }
 
 const PROFILE_KEY = "naily.profile.v1";
@@ -63,21 +93,4 @@ export function loadProfile(): NailOutline[] | null {
   } catch {
     return null;
   }
-}
-
-/** Loads a photo, downscaled so marking stays smooth on phones. */
-export async function loadPhoto(blob: Blob, maxSide = 2000): Promise<Photo> {
-  const bitmap = await createImageBitmap(blob);
-  const s = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const width = Math.round(bitmap.width * s);
-  const height = Math.round(bitmap.height * s);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  const out = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not encode photo"))), "image/jpeg", 0.9),
-  );
-  return { id: Math.random().toString(36).slice(2), url: URL.createObjectURL(out), width, height, card: null, nails: [] };
 }

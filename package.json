@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @naily/server & npm run dev -w @naily/web",
+    "vision": "cd apps/vision && uvicorn naily_vision.server:app --port 8790",
     "build": "npm run build -w @naily/web",
     "start": "npm run start -w @naily/server",
     "test": "npm test --workspaces --if-present",

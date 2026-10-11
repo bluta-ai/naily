@@ -209,3 +209,13 @@ describe("orders", () => {
     expect(priceOrder("press-on", 2).shippingFen).toBe(0);
   });
 });
+
+describe("presets", () => {
+  it("are all valid designs", async () => {
+    const { PRESETS } = await import("../src/index.ts");
+    for (const p of PRESETS) {
+      expect(validatePatternParams(p.design.main.patternId, p.design.main.params)).toEqual([]);
+      if (p.design.accent) expect(validatePatternParams(p.design.accent.patternId, p.design.accent.params)).toEqual([]);
+    }
+  });
+});

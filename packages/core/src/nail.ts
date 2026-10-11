@@ -22,11 +22,17 @@ export const isFingerId = (v: unknown): v is FingerId =>
 export const fingerName = (f: FingerId) => FINGER_NAMES[Number(f[1]) as 1 | 2 | 3 | 4 | 5];
 
 /**
- * Number of control points on a nail outline. Point 0 sits on the free edge (tip) and
- * point CUTICLE_INDEX on the cuticle; the rest run around the sides.
+ * A nail outline is an even number of points around the nail: point 0 sits on the free edge (tip)
+ * and point n/2 on the cuticle, the rest run around the sides. Hand-drawn outlines use 8 points;
+ * the scanner sends 32.
  */
 export const OUTLINE_POINTS = 8;
-export const CUTICLE_INDEX = OUTLINE_POINTS / 2;
+export const MIN_OUTLINE_POINTS = 8;
+export const MAX_OUTLINE_POINTS = 64;
+export const cuticleIndex = (points: Point[]) => points.length / 2;
+
+export const isValidOutlineLength = (n: number) =>
+  Number.isInteger(n) && n % 2 === 0 && n >= MIN_OUTLINE_POINTS && n <= MAX_OUTLINE_POINTS;
 
 /** A nail outline on the flat table plane, in millimetres. */
 export interface NailOutline {
@@ -67,7 +73,7 @@ export function defaultOutline(c: Point, width: number, length: number): Point[]
  */
 export function toNailFrame(outline: NailOutline, samplesPerSpan = 12): Polygon {
   const tip = outline.points[0]!;
-  const cuticle = outline.points[CUTICLE_INDEX]!;
+  const cuticle = outline.points[cuticleIndex(outline.points)]!;
   const u = normalize(sub(tip, cuticle));
   // In y-down coordinates the rows [perp(u); -u] form a rotation (determinant +1).
   const v = perp(u);
@@ -134,10 +140,11 @@ export function sizeForWidth(widthMm: number): number {
 }
 
 export function measureNail(outline: NailOutline): NailMeasurement {
-  if (outline.points.length !== OUTLINE_POINTS) {
-    throw new Error(`Nail outline needs ${OUTLINE_POINTS} control points`);
+  if (!isValidOutlineLength(outline.points.length)) {
+    throw new Error(`Nail outline needs an even number of points (${MIN_OUTLINE_POINTS}–${MAX_OUTLINE_POINTS})`);
   }
-  const local = toNailFrame(outline);
+  // Dense scanner outlines are already smooth; hand-placed control points need more samples.
+  const local = toNailFrame(outline, outline.points.length >= 24 ? 3 : 12);
   let width = 0;
   let length = 0;
   for (const p of local) {

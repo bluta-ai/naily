@@ -1,93 +1,138 @@
 # Naily · 甲印
 
-Custom-fit nails, measured by your phone.
-
-Customers photograph their hands next to a bank card, mark each nail outline, choose a design,
-and order. We print the design clipped to **their exact nail shapes at true millimetre scale**
-and ship press-on nails or nail wraps.
+Nails made to fit you exactly. Customers take **4 photos with their phone** (no dragging, no
+typing sizes); we measure every nail automatically and make press-on nails or nail wraps that fit.
 
 ```
-Photos ──► Mark card + nails ──► Sizes ──► Design ──► Order ──► Factory print sheet (1:1 SVG)
+Left hand ─► Left thumb ─► Right hand ─► Right thumb ─► ✓ Sizes ─► Pick a design ─► Address ─► Order
+   (each: one big "Take photo" button → "✓ Found 4 nails" or a plain-language "try again")
 ```
 
-## How the measuring works
+Built for everyone, including customers over 50: one action per screen, large text and buttons,
+pictures showing what to do, the phone's own camera app, friendly fixes instead of error codes,
+English and 中文.
 
-1. **Scale reference.** Every bank, transit or ID card is ISO/IEC 7810 ID-1: 85.60 × 53.98 mm.
-   The customer marks its four corners, and we solve a **homography** (a projective transform)
-   from image pixels to millimetres on the table. That fixes scale and also undoes the tilt
-   of a hand-held phone (`packages/core/src/calibration.ts`).
-2. **Nail outline.** Each nail is 8 draggable control points (tip, cuticle, sides) smoothed with
-   a Catmull-Rom spline. A magnifier loupe shows up while dragging so it can be placed precisely
-   on a phone.
-3. **Measurement.** The outline is mapped to mm and rotated into the nail's own frame
-   (cuticle→tip vertical, always a rotation, never a mirror image). From that we get width,
-   length, area, free-edge shape (square / squoval / round / oval / almond / stiletto) and a
-   standard press-on size 0–11 (`packages/core/src/nail.ts`).
-4. **Missing fingers** are mirrored from the same finger on the other hand and flagged `*`.
+## How the automatic measuring works
 
-**Privacy:** photos never leave the phone. The server only receives the nail outlines in mm.
+Each photo shows one hand (the other holds the phone) with any bank card beside it.
+
+| Step | How | Where |
+| --- | --- | --- |
+| Find the card | Edge contours → card-shaped quads; falls back to Segment Anything if the table is busy. Each side is then located to sub-pixel accuracy and the straight edges are intersected, so the rounded corners don't matter. | `apps/vision/naily_vision/card.py` |
+| Find the fingers | Google MediaPipe hand landmarks: which finger is which, and whether we see the back of the hand or the palm. | `nails.py` |
+| Find the nails | A YOLOv8 nail segmenter finds each nail; MobileSAM re-traces it on an upright, zoomed crop for sharp edges; a Fourier low-pass smooths the outline. | `nails.py` |
+| Pixels → millimetres | The card (85.60 × 53.98 mm) gives a perspective-correct mapping onto the table. Nails sit ~9 mm above the table (closer to the camera), so they are scaled down using the camera height worked out from the card size and the lens (EXIF). | `packages/core/src/scan.ts` |
+| Shape and size | Width, length, shape (square / squoval / round / oval / almond / stiletto) and press-on size. | `packages/core/src/nail.ts` |
+
+If a photo can't be used the customer gets one sentence telling them what to change ("turn your
+hand over", "we can't see the card", "this looks like your other hand", "hold the phone still"…).
+After two failed tries they may skip; that finger is mirrored from the other hand.
+
+**Privacy:** photos are processed in memory and never stored. Only the nail outlines (mm) are kept.
+
+### Tested so far
+
+On 62 real hand photos (the public "11k Hands" dataset) with a bank card added in:
+
+- Back of hand: all 4 finger nails found on ~93% of photos, thumb on ~90%.
+- Palm-up photos: always rejected with "turn your hand over".
+- Card corners: median error 0.7 px (≈0.15 mm), found in 57/62 photos; the misses all had the
+  card touching the hand, which the app tells the customer to avoid.
+- Pipeline unit tests check that a 14 mm nail photographed from 25 cm measures 14.0 mm.
+
+**Still to do before launch:** test with ~50 real customers' phone photos (various phones, light,
+skin tones, nail polish), compare against tape-measured sizes, and tune. Nails are curved, so the
+photo gives the straight-across width; a curvature allowance should be calibrated from test prints.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `packages/core` | Pure TypeScript, no DOM: homography, calibration, nail measurement, pattern library, print-sheet SVG, order validation and pricing. Shared by the web app, the server, and a future WeChat mini program. |
-| `apps/web` | Mobile-first React + Vite site (English / 中文). Camera capture with `getUserMedia`, upload fallback. |
-| `apps/server` | Express API + SQLite (`node:sqlite`, no native build). Validates orders, computes prices server-side, and renders the factory print sheet. |
+| `packages/core` | Pure TypeScript: calibration, measurement, height correction, patterns, design presets, print sheet, order validation, pricing. Reusable by a WeChat mini program. |
+| `apps/web` | Mobile React + Vite site. |
+| `apps/server` | Express API + SQLite (`node:sqlite`): `/api/scan`, orders, admin, print files. |
+| `apps/vision` | Python scanner (FastAPI, MediaPipe, ONNX Runtime, OpenCV). |
 
-## Run it
+## Run it locally
 
-Requires Node 22.5+.
+You need **Node.js 22.5+** and **Python 3.11–3.13**.
 
 ```bash
 npm install
-npm run dev        # API on :8787, web on :5173 (proxied /api)
-npm test           # core + server tests
-npm run typecheck
+
+# Vision service (first time only: download models, ~100 MB)
+cd apps/vision
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python fetch_models.py
+cd ../..
 ```
 
-Production:
+Then three terminals (Windows: same commands; PowerShell may need `npm.cmd` instead of `npm`):
 
 ```bash
-npm run build
-ADMIN_TOKEN=change-me npm start   # serves the built site + API on :8787
+npm run vision                     # 1. scanner on :8790 (with the venv activated)
+npm run dev -w @naily/server       # 2. API on :8787
+npm run dev -w @naily/web          # 3. website on :5173
 ```
 
-The camera needs HTTPS (or `localhost`) — put the server behind a TLS proxy when testing on a phone.
+Open http://localhost:5173. On a phone the camera needs HTTPS: run
+`cloudflared tunnel --url http://localhost:5173` and open the printed link.
 
-### Environment
+On Linux the scanner needs `libegl1 libgles2 libgl1` (`sudo apt install libegl1 libgles2 libgl1`).
 
-| Variable | Default | |
-| --- | --- | --- |
-| `PORT` | `8787` | |
-| `NAILY_DB` | `apps/server/data/naily.sqlite` | `:memory:` for throwaway runs |
-| `ADMIN_TOKEN` | unset | Admin endpoints are disabled until set |
+### With Docker (production)
+
+```bash
+echo "ADMIN_TOKEN=change-me" > .env
+docker compose up --build          # site + API on :8787, scanner inside
+```
+
+### Tests
+
+```bash
+npm test                                         # core + server
+cd apps/vision && pip install -r requirements-dev.txt && pytest
+NAILY_SAMPLE=photo.jpg pytest                    # also scan a real photo of a left hand + card
+```
 
 ## API
 
 | Method | Path | |
 | --- | --- | --- |
-| `POST` | `/api/orders` | Create an order (nails in mm, design, shipping). Returns id, status, price. |
-| `GET` | `/api/orders/:id` | Public status (no address or phone). |
+| `POST` | `/api/scan?step=left-hand\|left-thumb\|right-hand\|right-thumb` | Photo as the body. Returns nails in mm, or `{ ok: false, problem }`. |
+| `POST` | `/api/orders` | Create an order. Returns id, status, price. |
+| `GET` | `/api/orders/:id` | Public status. |
 | `GET` | `/api/admin/orders` | All orders. `Authorization: Bearer $ADMIN_TOKEN` |
-| `GET` | `/api/admin/orders/:id/sheet.svg` | **Print file at 1:1 scale** (width/height in mm) with red cut lines, ready for a UV printer / cutter. Nail wraps are inset 0.5 mm so they never touch skin. |
+| `GET` | `/api/admin/orders/:id/sheet.svg` | **Print file at 1:1 scale** with red cut lines. |
 | `PATCH` | `/api/admin/orders/:id` | `{ "status": "shipped", "trackingNumber": "SF123" }` |
 
-## Patterns
+| Variable | Default | |
+| --- | --- | --- |
+| `PORT` | `8787` | |
+| `VISION_URL` | `http://127.0.0.1:8790` | Where the scanner runs |
+| `NAILY_DB` | `apps/server/data/naily.sqlite` | |
+| `ADMIN_TOKEN` | unset | Admin endpoints are disabled until set |
+| `NAILY_MODELS` | `apps/vision/models` | Scanner model folder |
 
-Solid, French tip, Ombré, Polka dots, Stripes, Half moon, Chevron tip, Marble, Glitter fade —
-each with editable colours, plus an optional accent on the ring fingers. Patterns are plain SVG
-generated in `packages/core/src/patterns.ts`, so the browser preview and the factory file come
-from the same code. Adding a pattern is one object in that array.
+## Models and licences
+
+| Model | Licence |
+| --- | --- |
+| MediaPipe Hand Landmarker (Google) | Apache-2.0 |
+| MobileSAM (ONNX export by Acly) | Apache-2.0 |
+| `mnemic/nails_seg_yolov8` nail segmenter | CC-BY-4.0 weights, trained with Ultralytics YOLOv8 (**AGPL-3.0**) |
+
+The app runs the YOLO model with ONNX Runtime only, but Ultralytics considers models trained with
+YOLOv8 to fall under AGPL-3.0. **Before selling, buy an Ultralytics licence or replace this one
+model** with an Apache-licensed detector trained on our own (consented) customer photos, which
+will also make it more accurate.
 
 ## Roadmap
 
-- **WeChat mini program.** Reuse `@naily/core` as-is (it has no DOM dependencies); build the UI
-  with Taro or native mini-program pages using `wx.chooseMedia` / `<camera>` and canvas for
-  marking. Until then the website works inside WeChat's built-in browser.
-- **Payments:** WeChat Pay / Alipay (orders are currently created unpaid as `received`).
-- **Auto nail detection:** hand-landmark model to pre-place outlines, then edge snapping, so
-  customers only fine-tune.
-- **Card auto-detection** (quad detection) to skip manual corner marking.
-- Nail curvature (C-curve) from a side photo for better press-on fit.
-- Admin dashboard UI on top of the admin API; customer accounts and reorder history.
+- **WeChat mini program**: the same 4-photo flow with `wx.chooseMedia`, calling `/api/scan`.
+- **Payments**: WeChat Pay / Alipay.
+- **Live camera guidance**: tell the customer "move closer" / "card not visible" before they press the button.
+- **Staff help**: if photos keep failing, send them (with consent) to the workshop to measure by hand.
+- Nail curvature allowance from test prints; admin dashboard UI.

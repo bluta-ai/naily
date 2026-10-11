@@ -4,10 +4,14 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   measureNail,
+  measureScan,
   priceOrder,
   renderSheet,
+  SCAN_STEPS,
   validateOrder,
   type OrderRequest,
+  type ScanResult,
+  type ScanStep,
 } from "@naily/core";
 import { ORDER_STATUSES, type OrderStatus, type OrderStore, type StoredOrder } from "./db.ts";
 
@@ -17,6 +21,22 @@ export interface AppOptions {
   adminToken?: string;
   /** Built web app to serve (apps/web/dist). */
   staticDir?: string;
+  /** Sends a photo to the vision service. Defaults to POSTing to `visionUrl`. */
+  scanPhoto?: (photo: Buffer, step: ScanStep) => Promise<ScanResult>;
+  visionUrl?: string;
+}
+
+export function visionClient(visionUrl: string) {
+  return async (photo: Buffer, step: ScanStep): Promise<ScanResult> => {
+    const res = await fetch(`${visionUrl}/scan?step=${step}`, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: new Uint8Array(photo),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) throw new Error(`Vision service answered ${res.status}`);
+    return (await res.json()) as ScanResult;
+  };
 }
 
 /** What a customer may see about their order: no address or phone. */
@@ -30,10 +50,62 @@ const publicView = (o: StoredOrder) => ({
   price: o.price,
 });
 
-export function createApp({ store, adminToken, staticDir }: AppOptions) {
+export function createApp({ store, adminToken, staticDir, scanPhoto, visionUrl = "http://127.0.0.1:8790" }: AppOptions) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "64kb" }));
+  const scanner = scanPhoto ?? visionClient(visionUrl);
+
+  /**
+   * One photo in, nails in millimetres out. The photo is passed straight through to the vision
+   * service and is never stored.
+   */
+  app.post(
+    "/api/scan",
+    express.raw({ type: ["image/*", "application/octet-stream"], limit: "15mb" }),
+    async (req, res) => {
+      const step = String(req.query.step) as ScanStep;
+      if (!SCAN_STEPS.includes(step)) {
+        res.status(400).json({ error: `step must be one of ${SCAN_STEPS.join(", ")}` });
+        return;
+      }
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        res.status(400).json({ error: "Send the photo as the request body" });
+        return;
+      }
+      let scan: ScanResult;
+      try {
+        scan = await scanner(req.body, step);
+      } catch (err) {
+        console.error("scan failed", err);
+        res.status(503).json({ ok: false, problem: "service-unavailable" });
+        return;
+      }
+      const preview = { width: scan.width, height: scan.height, card: scan.card ?? null, nails: scan.nails ?? [] };
+      if (!scan.ok) {
+        res.json({ ok: false, problem: scan.problem ?? "unreadable", preview });
+        return;
+      }
+      try {
+        const m = measureScan(scan);
+        const describe = (n: (typeof m.nails)[number]) => {
+          const size = measureNail(n);
+          return { ...n, widthMm: size.widthMm, lengthMm: size.lengthMm, shape: size.shape };
+        };
+        res.json({
+          ok: true,
+          nails: m.nails.map(describe),
+          sideThumb: m.sideThumb ? describe(m.sideThumb) : null,
+          missing: scan.missing ?? [],
+          warnings: m.warnings,
+          preview,
+        });
+      } catch (err) {
+        console.error("scan could not be measured", err);
+        res.json({ ok: false, problem: "few-nails", preview });
+      }
+    },
+  );
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });

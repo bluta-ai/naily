@@ -5,3 +5,5 @@ export * from "./nail.ts";
 export * from "./patterns.ts";
 export * from "./design.ts";
 export * from "./order.ts";
+export * from "./scan.ts";
+export * from "./presets.ts";

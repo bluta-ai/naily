@@ -80,3 +80,57 @@ describe("orders API", () => {
     expect((await json(updated)).trackingNumber).toBe("SF123");
   });
 });
+
+describe("scan API", () => {
+  it("converts a scan to millimetres and reports problems in plain codes", async () => {
+    const { createApp: create } = await import("../src/app.ts");
+    const calls: string[] = [];
+    const app = create({
+      store: new OrderStore(":memory:"),
+      scanPhoto: async (_photo, step) => {
+        calls.push(step);
+        if (step === "left-thumb") return { ok: false, problem: "no-card", width: 100, height: 100 };
+        // Card 856 x 540 px → 10 px per mm; a 120 x 130 px oval nail → about 12 x 13 mm.
+        const oval = Array.from({ length: 32 }, (_, i) => {
+          const a = (i / 32) * Math.PI * 2;
+          return [500 + Math.sin(a) * 60, 300 - Math.cos(a) * 65] as [number, number];
+        });
+        return {
+          ok: true, width: 2000, height: 1500, focal35: 26,
+          card: [[100, 800], [956, 800], [956, 1340], [100, 1340]],
+          nails: [{ finger: "L2", points: oval, confidence: 0.9 }],
+        };
+      },
+    });
+    const srv = app.listen(0);
+    await new Promise((r) => srv.once("listening", r));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/scan`;
+    const send = (step: string) =>
+      fetch(`${url}?step=${step}`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: new Uint8Array([1, 2, 3]) });
+
+    const ok = await json(await send("left-hand"));
+    expect(ok.ok).toBe(true);
+    expect(ok.nails[0].finger).toBe("L2");
+    // Slightly under 12 mm: the nail sits above the card, closer to the camera.
+    expect(ok.nails[0].widthMm).toBeGreaterThan(11);
+    expect(ok.nails[0].widthMm).toBeLessThan(12);
+
+    expect(await json(await send("left-thumb"))).toMatchObject({ ok: false, problem: "no-card" });
+    expect((await send("both-feet")).status).toBe(400);
+    expect(calls).toEqual(["left-hand", "left-thumb"]);
+    srv.close();
+  });
+
+  it("says the scanner is unavailable instead of crashing", async () => {
+    const { createApp: create } = await import("../src/app.ts");
+    const app = create({ store: new OrderStore(":memory:"), visionUrl: "http://127.0.0.1:1" });
+    const srv = app.listen(0);
+    await new Promise((r) => srv.once("listening", r));
+    const res = await fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/scan?step=left-hand`, {
+      method: "POST", headers: { "content-type": "image/jpeg" }, body: new Uint8Array([1]),
+    });
+    expect(res.status).toBe(503);
+    expect(await json(res)).toMatchObject({ problem: "service-unavailable" });
+    srv.close();
+  });
+});

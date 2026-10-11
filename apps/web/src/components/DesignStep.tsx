@@ -1,7 +1,9 @@
+import { useState } from "react";
 import {
   defaultParams,
   getPattern,
   PATTERNS,
+  PRESETS,
   renderNail,
   renderSheet,
   type Design,
@@ -20,8 +22,11 @@ interface Props {
 }
 
 export function DesignStep({ nails, design, onChange, onBack, onNext }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const [customising, setCustomising] = useState(false);
   const sample = nails.find((n) => n.finger === "R3") ?? nails[0]!;
+  const hand = orderForDisplay(nails).filter((n) => n.finger[0] === "R");
+  const current = JSON.stringify(design);
 
   function download() {
     const svg = renderSheet(nails, design, { cutLines: false, title: "Naily" });
@@ -34,42 +39,68 @@ export function DesignStep({ nails, design, onChange, onBack, onNext }: Props) {
 
   return (
     <section className="card">
-      <h2>{t.designTitle}</h2>
+      <h1>{t.designTitle}</h1>
       <NailPreview nails={orderForDisplay(nails)} design={design} />
-      <p className="muted small">{t.previewNote}</p>
+      <p className="muted">{t.previewNote}</p>
 
-      <PatternEditor id="main" sample={sample} choice={design.main} onChange={(main) => onChange({ ...design, main })} />
-
-      <label className="toggle">
-        <input
-          type="checkbox"
-          checked={Boolean(design.accent)}
-          onChange={(e) =>
-            onChange(
-              e.target.checked
-                ? { ...design, accent: { fingers: ["L4", "R4"], patternId: "glitter", params: defaultParams(getPattern("glitter")!) } }
-                : { main: design.main },
-            )
-          }
-        />
-        {t.accent}
-      </label>
-      {design.accent && (
-        <PatternEditor
-          id="accent"
-          sample={nails.find((n) => n.finger === "R4") ?? sample}
-          choice={design.accent}
-          onChange={(c) => onChange({ ...design, accent: { ...c, fingers: design.accent!.fingers } })}
-        />
+      {!customising && (
+        <div className="presets">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              className={`preset ${JSON.stringify(p.design) === current ? "active" : ""}`}
+              aria-pressed={JSON.stringify(p.design) === current}
+              onClick={() => onChange(p.design)}
+            >
+              <NailPreview nails={hand} design={p.design} />
+              <span>{p.name[lang]}</span>
+            </button>
+          ))}
+        </div>
       )}
 
-      <div className="actions">
-        <button onClick={onBack}>{t.back}</button>
-        <button onClick={download}>{t.download}</button>
-        <button className="primary" onClick={onNext}>
-          {t.next}
+      {customising && (
+        <>
+          <PatternEditor id="main" sample={sample} choice={design.main} onChange={(main) => onChange({ ...design, main })} />
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(design.accent)}
+              onChange={(e) =>
+                onChange(
+                  e.target.checked
+                    ? { ...design, accent: { fingers: ["L4", "R4"], patternId: "glitter", params: defaultParams(getPattern("glitter")!) } }
+                    : { main: design.main },
+                )
+              }
+            />
+            {t.accent}
+          </label>
+          {design.accent && (
+            <PatternEditor
+              id="accent"
+              sample={nails.find((n) => n.finger === "R4") ?? sample}
+              choice={design.accent}
+              onChange={(c) => onChange({ ...design, accent: { ...c, fingers: design.accent!.fingers } })}
+            />
+          )}
+        </>
+      )}
+
+      <button className="primary huge" onClick={onNext}>
+        {t.next}
+      </button>
+      <div className="row">
+        <button className="plain" onClick={() => setCustomising(!customising)}>
+          {customising ? t.hideCustomise : `🎨 ${t.customise}`}
+        </button>
+        <button className="plain" onClick={download}>
+          {t.download}
         </button>
       </div>
+      <button className="link back" onClick={onBack}>
+        ‹ {t.back}
+      </button>
     </section>
   );
 }

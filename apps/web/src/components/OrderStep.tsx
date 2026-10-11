@@ -79,7 +79,7 @@ export function OrderStep({ nails, design, onBack, onPlaced }: Props) {
 
   return (
     <form className="card" onSubmit={submit}>
-      <h2>{t.product}</h2>
+      <h1>{t.product}</h1>
       <div className="products">
         {(Object.keys(PRODUCTS) as Product[]).map((p) => (
           <label key={p} className={`product ${p === product ? "active" : ""}`}>
@@ -137,14 +137,12 @@ export function OrderStep({ nails, design, onBack, onPlaced }: Props) {
         </ul>
       )}
 
-      <div className="actions">
-        <button type="button" onClick={onBack}>
-          {t.back}
-        </button>
-        <button className="primary" disabled={busy}>
-          {busy ? t.placing : t.placeOrder}
-        </button>
-      </div>
+      <button className="primary huge" disabled={busy}>
+        {busy ? t.placing : t.placeOrder}
+      </button>
+      <button type="button" className="link back" onClick={onBack}>
+        ‹ {t.back}
+      </button>
     </form>
   );
 }
