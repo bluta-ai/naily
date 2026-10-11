@@ -1,0 +1,21 @@
+{
+  "name": "naily",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Scan your nails with a phone camera, design a pattern, get custom-fit press-on nails delivered.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @naily/server & npm run dev -w @naily/web",
+    "build": "npm run build -w @naily/web",
+    "start": "npm run start -w @naily/server",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}
