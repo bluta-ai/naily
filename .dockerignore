@@ -1,6 +1,9 @@
 node_modules
 **/node_modules
-apps/vision
+apps/vision/models/*.pt
+apps/vision/.venv
+**/__pycache__
+**/.pytest_cache
 **/dist
 **/data
 .git

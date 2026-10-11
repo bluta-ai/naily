@@ -89,6 +89,19 @@ echo "ADMIN_TOKEN=change-me" > .env
 docker compose up --build          # site + API on :8787, scanner inside
 ```
 
+### Put it online (free): Hugging Face Spaces
+
+```bash
+pip install huggingface_hub
+python apps/vision/fetch_models.py
+HF_TOKEN=hf_xxx python deploy/huggingface/deploy.py <hf-username>/naily --admin-token change-me
+```
+
+The Space builds one container with everything (`deploy/huggingface/Dockerfile`, ~5–10 min) and
+is then live at `https://<hf-username>-naily.hf.space`. Note: hf.space is not reachable from
+mainland China without a VPN; for customers there, host on Tencent Cloud / Alibaba Cloud with the
+same Dockerfile.
+
 ### Tests
 
 ```bash
