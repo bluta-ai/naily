@@ -4,10 +4,10 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   measureNail,
-  measureScan,
   priceOrder,
   renderSheet,
   SCAN_STEPS,
+  summariseScan,
   validateOrder,
   type OrderRequest,
   type ScanResult,
@@ -81,29 +81,7 @@ export function createApp({ store, adminToken, staticDir, scanPhoto, visionUrl =
         res.status(503).json({ ok: false, problem: "service-unavailable" });
         return;
       }
-      const preview = { width: scan.width, height: scan.height, card: scan.card ?? null, nails: scan.nails ?? [] };
-      if (!scan.ok) {
-        res.json({ ok: false, problem: scan.problem ?? "unreadable", preview });
-        return;
-      }
-      try {
-        const m = measureScan(scan);
-        const describe = (n: (typeof m.nails)[number]) => {
-          const size = measureNail(n);
-          return { ...n, widthMm: size.widthMm, lengthMm: size.lengthMm, shape: size.shape };
-        };
-        res.json({
-          ok: true,
-          nails: m.nails.map(describe),
-          sideThumb: m.sideThumb ? describe(m.sideThumb) : null,
-          missing: scan.missing ?? [],
-          warnings: m.warnings,
-          preview,
-        });
-      } catch (err) {
-        console.error("scan could not be measured", err);
-        res.json({ ok: false, problem: "few-nails", preview });
-      }
+      res.json(summariseScan(scan));
     },
   );
 

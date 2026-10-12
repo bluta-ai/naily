@@ -1,6 +1,6 @@
 import { calibrateFromCard, pixelsToMm, type Calibration } from "./calibration.ts";
 import { add, centroid, scale, sub, type Point } from "./geometry.ts";
-import { isFingerId, type FingerId, type NailOutline } from "./nail.ts";
+import { isFingerId, measureNail, type FingerId, type NailOutline } from "./nail.ts";
 
 /** The four photos the customer takes; one hand holds the phone while the other is scanned. */
 export const SCAN_STEPS = ["left-hand", "left-thumb", "right-hand", "right-thumb"] as const;
@@ -86,4 +86,46 @@ export function measureScan(scan: ScanResult): ScanMeasurement {
     cameraDistanceMm: distance,
     warnings: cal.warnings,
   };
+}
+
+export interface MeasuredScanNail extends NailOutline {
+  confidence: number;
+  widthMm: number;
+  lengthMm: number;
+  shape: string;
+}
+
+/** What the app shows after one photo: nails in millimetres, or a problem code. */
+export interface ScanSummary {
+  ok: boolean;
+  problem?: ScanProblem;
+  nails?: MeasuredScanNail[];
+  sideThumb?: MeasuredScanNail | null;
+  missing?: string[];
+  warnings?: Calibration["warnings"];
+  /** Pixel data, only for drawing the outlines over the photo. */
+  preview: { width?: number; height?: number; card: [number, number][] | null; nails: ScannedNail[] };
+}
+
+/** Turns the scanner's pixel result into what the app shows. Used by the server and the browser. */
+export function summariseScan(scan: ScanResult): ScanSummary {
+  const preview = { width: scan.width, height: scan.height, card: scan.card ?? null, nails: scan.nails ?? [] };
+  if (!scan.ok) return { ok: false, problem: scan.problem ?? "unreadable", preview };
+  try {
+    const m = measureScan(scan);
+    const describe = (n: ScanMeasurement["nails"][number]): MeasuredScanNail => {
+      const size = measureNail(n);
+      return { ...n, widthMm: size.widthMm, lengthMm: size.lengthMm, shape: size.shape };
+    };
+    return {
+      ok: true,
+      nails: m.nails.map(describe),
+      sideThumb: m.sideThumb ? describe(m.sideThumb) : null,
+      missing: scan.missing ?? [],
+      warnings: m.warnings,
+      preview,
+    };
+  } catch {
+    return { ok: false, problem: "few-nails", preview };
+  }
 }

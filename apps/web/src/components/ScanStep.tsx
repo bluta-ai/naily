@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScanStep as Step } from "@naily/core";
 import { useI18n } from "../i18n.ts";
-import { scanPhoto, type ScanResponse } from "../state.ts";
+import type { ScanResponse } from "../state.ts";
+import { scanPhoto, type ScanProgress } from "../backend.ts";
 import { Illustration } from "./Illustration.tsx";
 
 interface Props {
@@ -20,6 +21,7 @@ export function ScanStep({ step, index, total, result, onResult, onNext, onBack 
   const inputRef = useRef<HTMLInputElement>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [failures, setFailures] = useState(0);
   const text = t.steps[step];
 
@@ -32,8 +34,9 @@ export function ScanStep({ step, index, total, result, onResult, onNext, onBack 
     setPhotoUrl(URL.createObjectURL(file));
     setBusy(true);
     onResult(undefined);
-    const res = await scanPhoto(file, step);
+    const res = await scanPhoto(file, step, setProgress);
     setBusy(false);
+    setProgress(null);
     if (!res.ok) setFailures((f) => f + 1);
     onResult(res);
   }
@@ -70,9 +73,15 @@ export function ScanStep({ step, index, total, result, onResult, onNext, onBack 
           <PhotoWithOutlines url={photoUrl} result={result} />
           <div aria-live="polite">
             {busy && (
-              <p className="status">
-                <span className="spinner" aria-hidden /> {t.measuring}
-              </p>
+              <div className="status">
+                <span className="spinner" aria-hidden />
+                <div className="progress-text">
+                  {progress?.phase === "loading" ? t.gettingReady : t.measuring}
+                  {progress && progress.phase !== "uploading" && (
+                    <progress max={1} value={progress.fraction} aria-label={t.measuring} />
+                  )}
+                </div>
+              </div>
             )}
             {result?.ok && <p className="status good">✓ {t.found(found)}</p>}
             {result && !result.ok && <p className="status bad">{t.problems[result.problem ?? "unreadable"]}</p>}

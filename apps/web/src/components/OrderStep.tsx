@@ -3,7 +3,6 @@ import {
   MAX_SETS,
   priceOrder,
   PRODUCTS,
-  validateOrder,
   type Design,
   type NailOutline,
   type OrderRequest,
@@ -11,6 +10,7 @@ import {
   type ShippingAddress,
 } from "@naily/core";
 import { useI18n } from "../i18n.ts";
+import { submitOrder } from "../backend.ts";
 
 interface Props {
   nails: NailOutline[];
@@ -54,27 +54,12 @@ export function OrderStep({ nails, design, onBack, onPlaced }: Props) {
       ...(email ? { email } : {}),
       ...(note ? { note } : {}),
     };
-    const local = validateOrder(order);
-    if (local.length) {
-      setErrors(local);
-      return;
-    }
     setBusy(true);
     setErrors([]);
-    try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(order),
-      });
-      const body = await res.json();
-      if (!res.ok) setErrors(body.errors ?? [body.error ?? `Error ${res.status}`]);
-      else onPlaced(body.id);
-    } catch {
-      setErrors(["Network error, please try again."]);
-    } finally {
-      setBusy(false);
-    }
+    const result = await submitOrder(order);
+    setBusy(false);
+    if ("id" in result) onPlaced(result.id);
+    else setErrors(result.errors);
   }
 
   return (

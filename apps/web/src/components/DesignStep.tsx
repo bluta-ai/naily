@@ -12,6 +12,7 @@ import {
 } from "@naily/core";
 import { useI18n } from "../i18n.ts";
 import { NailPreview, orderForDisplay } from "./NailPreview.tsx";
+import { BROWSER_MODE } from "../backend.ts";
 
 interface Props {
   nails: NailMeasurement[];
@@ -94,9 +95,12 @@ export function DesignStep({ nails, design, onChange, onBack, onNext }: Props) {
         <button className="plain" onClick={() => setCustomising(!customising)}>
           {customising ? t.hideCustomise : `🎨 ${t.customise}`}
         </button>
-        <button className="plain" onClick={download}>
-          {t.download}
-        </button>
+        {/* Hosted pages (Claude Artifacts) cannot start downloads. */}
+        {!BROWSER_MODE && (
+          <button className="plain" onClick={download}>
+            {t.download}
+          </button>
+        )}
       </div>
       <button className="link back" onClick={onBack}>
         ‹ {t.back}

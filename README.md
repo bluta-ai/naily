@@ -102,6 +102,18 @@ is then live at `https://<hf-username>-naily.hf.space`. Note: hf.space is not re
 mainland China without a VPN; for customers there, host on Tencent Cloud / Alibaba Cloud with the
 same Dockerfile.
 
+### Put it online without a server: Claude Artifact
+
+The same site can run entirely on the phone: the scanner is ported to the browser
+(`apps/web/src/scanner/`, ONNX Runtime Web + MediaPipe + OpenCV.js) and orders go to the
+Artifact's database. It gives the same measurements as the server (checked to within 0.1 mm),
+downloads ~130 MB the first time, and measures in ~10–15 s per photo on a fast phone.
+
+```bash
+python apps/vision/export_browser_models.py --full   # models → apps/web/public-artifact/models
+npm run build:artifact -w @naily/web                 # → apps/web/dist-artifact (publish naily.html + files)
+```
+
 ### Tests
 
 ```bash
