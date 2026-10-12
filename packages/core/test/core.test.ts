@@ -219,3 +219,15 @@ describe("presets", () => {
     }
   });
 });
+
+describe("renderArtwork", () => {
+  it("draws the finger's pattern (accent included) as a standalone SVG", async () => {
+    const { renderArtwork } = await import("../src/index.ts");
+    const design: Design = {
+      main: { patternId: "solid", params: { base: "#112233" } },
+      accent: { fingers: ["L4"], patternId: "solid", params: { base: "#445566" } },
+    };
+    expect(renderArtwork(design, "L2", 12, 13)).toMatch(/^<svg[^>]+viewBox="0 0 12.00 13.00"[^>]*>.*#112233/);
+    expect(renderArtwork(design, "L4", 12, 13)).toContain("#445566");
+  });
+});

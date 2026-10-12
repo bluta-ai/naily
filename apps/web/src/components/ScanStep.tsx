@@ -10,7 +10,7 @@ interface Props {
   index: number;
   total: number;
   result?: ScanResponse;
-  onResult(result: ScanResponse | undefined): void;
+  onResult(result: ScanResponse | undefined, photo?: File): void;
   onNext(): void;
   onBack(): void;
 }
@@ -38,7 +38,7 @@ export function ScanStep({ step, index, total, result, onResult, onNext, onBack 
     setBusy(false);
     setProgress(null);
     if (!res.ok) setFailures((f) => f + 1);
-    onResult(res);
+    onResult(res, file);
   }
 
   const takePhoto = () => {

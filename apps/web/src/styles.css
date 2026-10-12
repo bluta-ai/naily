@@ -127,3 +127,6 @@ table.sizes { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-v
 
 .progress-text { display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .progress-text progress { width: 100%; height: 10px; accent-color: var(--accent); }
+
+.try-on h2 { margin-top: 0; }
+.try-on-canvas { display: block; width: 100%; height: auto; max-width: 100%; border-radius: 14px; background: var(--surface-2); }

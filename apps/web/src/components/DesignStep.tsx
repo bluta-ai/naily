@@ -9,20 +9,25 @@ import {
   type Design,
   type NailMeasurement,
   type PatternChoice,
+  type ScanStep,
+  type ScanSummary,
 } from "@naily/core";
 import { useI18n } from "../i18n.ts";
 import { NailPreview, orderForDisplay } from "./NailPreview.tsx";
+import { TryOn } from "./TryOn.tsx";
 import { BROWSER_MODE } from "../backend.ts";
 
 interface Props {
   nails: NailMeasurement[];
+  /** Photos from this visit, for painting the design onto the customer's own hand. */
+  shots: { step: ScanStep; file: File; result: ScanSummary }[];
   design: Design;
   onChange(design: Design): void;
   onBack(): void;
   onNext(): void;
 }
 
-export function DesignStep({ nails, design, onChange, onBack, onNext }: Props) {
+export function DesignStep({ nails, shots, design, onChange, onBack, onNext }: Props) {
   const { t, lang } = useI18n();
   const [customising, setCustomising] = useState(false);
   const sample = nails.find((n) => n.finger === "R3") ?? nails[0]!;
@@ -41,8 +46,14 @@ export function DesignStep({ nails, design, onChange, onBack, onNext }: Props) {
   return (
     <section className="card">
       <h1>{t.designTitle}</h1>
-      <NailPreview nails={orderForDisplay(nails)} design={design} />
-      <p className="muted">{t.previewNote}</p>
+      {shots.length > 0 ? (
+        <TryOn design={design} shots={shots} />
+      ) : (
+        <>
+          <NailPreview nails={orderForDisplay(nails)} design={design} />
+          <p className="muted">{t.previewNote}</p>
+        </>
+      )}
 
       {!customising && (
         <div className="presets">

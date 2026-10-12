@@ -109,3 +109,25 @@ export function renderSheet(nails: NailMeasurement[], design: Design, options: S
 export function escapeXml(s: string): string {
   return s.replace(/[<>&"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
+
+/**
+ * The finger's artwork as a standalone SVG, unclipped, `widthMm` × `lengthMm` with the tip at the
+ * top. Used to paint the design onto the customer's own photo (the photo's nail outline clips it).
+ */
+export function renderArtwork(design: Design, finger: FingerId, widthMm: number, lengthMm: number, pxPerMm = 20): string {
+  const choice = choiceFor(design, finger);
+  const pattern = getPattern(choice.patternId);
+  if (!pattern) throw new Error(`Unknown pattern "${choice.patternId}"`);
+  const art = pattern.render(choice.params as Required<PatternParams>, {
+    width: widthMm,
+    height: lengthMm,
+    uid: `art-${finger}`,
+    seed: seedFor(finger),
+  });
+  const w = widthMm.toFixed(2);
+  const h = lengthMm.toFixed(2);
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" ` +
+    `width="${Math.round(widthMm * pxPerMm)}" height="${Math.round(lengthMm * pxPerMm)}">${art}</svg>`
+  );
+}

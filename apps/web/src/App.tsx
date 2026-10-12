@@ -17,6 +17,8 @@ export function App() {
   const t = dictionaries[lang];
   const [screen, setScreen] = useState<Screen>({ name: "welcome" });
   const [results, setResults] = useState<StepResults>({});
+  /** This visit's photos, kept in memory only, for the try-on preview. */
+  const [photos, setPhotos] = useState<Partial<Record<Step, File>>>({});
   const [savedNails] = useState<NailOutline[] | null>(loadProfile);
   /** Set when the customer reuses saved sizes instead of taking photos. */
   const [profileNails, setProfileNails] = useState<NailOutline[] | null>(null);
@@ -28,10 +30,21 @@ export function App() {
   const missing = profileNails ? [] : collected.missing;
   const measured = useMemo(() => nails.map(measureNail), [nails]);
 
-  const setResult = (step: Step, r: ScanResponse | undefined) => setResults((prev) => ({ ...prev, [step]: r }));
+  const setResult = (step: Step, r: ScanResponse | undefined, photo?: File) => {
+    setResults((prev) => ({ ...prev, [step]: r }));
+    if (photo) setPhotos((prev) => ({ ...prev, [step]: photo }));
+  };
+  const shots = profileNails
+    ? []
+    : (["left-hand", "right-hand"] as Step[]).flatMap((step) => {
+        const file = photos[step];
+        const result = results[step];
+        return file && result ? [{ step, file, result }] : [];
+      });
 
   function restart() {
     setResults({});
+    setPhotos({});
     setProfileNails(null);
     setDesign(PRESETS[0]!.design);
     setOrderId(null);
@@ -85,7 +98,7 @@ export function App() {
             index={screen.index}
             total={SCAN_STEPS.length}
             result={results[SCAN_STEPS[screen.index]!]}
-            onResult={(r) => setResult(SCAN_STEPS[screen.index]!, r)}
+            onResult={(r, photo) => setResult(SCAN_STEPS[screen.index]!, r, photo)}
             onNext={() =>
               setScreen(screen.index + 1 < SCAN_STEPS.length ? { name: "scan", index: screen.index + 1 } : { name: "sizes" })
             }
@@ -111,6 +124,7 @@ export function App() {
         {screen.name === "design" && (
           <DesignStep
             nails={measured}
+            shots={shots}
             design={design}
             onChange={setDesign}
             onBack={() => setScreen({ name: "sizes" })}
