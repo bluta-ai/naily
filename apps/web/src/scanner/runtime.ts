@@ -129,7 +129,7 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 /** Approximate total download, for the progress bar (models + WebAssembly + OpenCV). */
-const EXPECTED_BYTES = 75e6;
+const EXPECTED_BYTES = 135e6;
 
 export function loadRuntime(onProgress: Progress = () => {}): Promise<Runtime> {
   if (!loading) {
